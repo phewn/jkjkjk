@@ -42,6 +42,7 @@ local OreDatabase = {
         "Crimson Crystal", "Rainbow Crystal", "Arcane Crystal"
     },
     ["Frozen"] = {
+        -- original Frozen ores
         "Tungsten",
         "Sulfur",
         "Pumice",
@@ -55,7 +56,23 @@ local OreDatabase = {
         "Velchire",
         "Sanctis",
         "Snowite",
-        "Iceite"
+        "Iceite",
+
+        -- new Frozen ores
+        "Mistvein",
+        "Lgarite",
+        "Voidfractal",
+        "Moltenfrost",
+        "Crimsonite",
+        "Malachite",
+        "Aqujade",
+        "Cryptex",
+        "Galestor",
+        "Voidstar",
+        "Etherealite",
+        "Suryafal",
+        "Heavenite",
+        "Gargantuan"
     }
 }
 
@@ -161,8 +178,8 @@ local SavedMiningTarget = nil
 local MouseState = { WasPressed = false }
 local EquipDebounce = 0
 local LastMineClick = 0
-local TargetLocked = false
 local LastWeaponSwitch = 0
+local TargetLocked = false
 local InCombat = false
 local IsSelling = false
 
@@ -337,7 +354,6 @@ local function SpamWeaponSwitch()
         keypress(slot)
         keyrelease(slot)
     else
-        -- fallback to VIM if needed (1 / 2)
         if os.clock() % 0.4 < 0.2 then
             VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
             VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game)
@@ -629,7 +645,7 @@ local function FindNearestRock()
 end
 
 -- ============================================================================
--- 6. AUTO SELL SYSTEM (using your fixed version, adapted)
+-- 6. AUTO SELL SYSTEM (your fixed logic, adapted)
 -- ============================================================================
 
 local function PressE()
@@ -1381,7 +1397,6 @@ local function UpdateLoop()
 
                 SavedMiningTarget = nil
 
-                -- ensure pickaxe re-equipped
                 if Config.AutoEquip then
                     EquipTool(Config.ToolName, 49)
                 end
@@ -1412,7 +1427,6 @@ local function UpdateLoop()
             return
         end
 
-        -- apply filter again once ore is revealed
         if Config.FilterEnabled then
             local HasWanted, AllOres = HasAnyWantedOre(CurrentTarget)
 
