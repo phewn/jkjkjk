@@ -78,7 +78,7 @@ local Config = {
     MobDetectionRange = CustomSettings.MobScanRange or 30,
     MobCombatMode = CustomSettings.CombatMode or "Kill",
     CombatUnderOffset = CustomSettings.CombatUnderOffset or 8,
-    CombatEnabled = CustomSettings.CombatEnabled or false, -- master combat toggle
+    CombatEnabled = CustomSettings.CombatEnabled or false, -- master toggle
     
     -- FILTER
     FilterEnabled = CustomSettings.FilterEnabled or false,
@@ -1012,9 +1012,11 @@ local function UpdateLoop()
             end
             
             if Config.CombatEnabled and NearbyMob then
+                -- ===== COMBAT ACTIVE =====
                 InCombat = true
                 
                 if Config.MobCombatMode == "Kill" then
+                    -- Save current rock when we enter combat
                     if CurrentTarget and not SavedMiningTarget then
                         SavedMiningTarget = CurrentTarget
                     end
@@ -1033,7 +1035,8 @@ local function UpdateLoop()
                         if Dist > Config.MineDistance then
                             SkyHopMove(MyRoot, GoalPos, DeltaTime)
                         else
-                            EquipTool(Config.WeaponName, 50)
+                            -- equip weapon while fighting
+                            EquipTool(Config.WeaponName, 50) -- hotbar "2"
                             local LookAt = Vector3.new(MobPos.x, MobPos.y, MobPos.z)
                             local Pos = Vector3.new(GoalPos.x, GoalPos.y, GoalPos.z)
                             MyRoot.CFrame = CFrame.lookAt(Pos, LookAt)
@@ -1043,12 +1046,21 @@ local function UpdateLoop()
                     end
                     
                 elseif Config.MobCombatMode == "Spam" then
+                    -- Just spam swap 1/2 while still mining
                     SpamWeaponSwitch()
                 end
+
             else
+                -- ===== NO MOBS NEARBY (JUST EXITED COMBAT OR COMBAT OFF) =====
+                if InCombat and Config.CombatEnabled then
+                    -- We were in combat last frame, now no mob -> switch back to pickaxe
+                    EquipTool(Config.ToolName, 49) -- hotbar "1"
+                end
+
                 InCombat = false
                 CurrentMobTarget = nil
                 
+                -- Restore saved rock after combat, if it's still valid
                 if SavedMiningTarget and not CurrentTarget then
                     if IsValid(SavedMiningTarget) and GetRockHealth(SavedMiningTarget) > 0 then
                         CurrentTarget = SavedMiningTarget
@@ -1056,7 +1068,7 @@ local function UpdateLoop()
                     end
                     SavedMiningTarget = nil
                 end
-                
+
                 if CurrentTarget then
                     if not IsValid(CurrentTarget) then CurrentTarget = nil; TargetLocked = false; return end
                     local HP = GetRockHealth(CurrentTarget)
