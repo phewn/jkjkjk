@@ -26,6 +26,11 @@ local RockNamesSet = {}
 local RockList = {}
 local FallbackRocks = {}
 
+-- NEW: Mob farm data
+local MobList = {}
+local EnabledMobs = {}
+local MobCurrentTarget = nil
+
 local OreDatabase = {
     ["Stonewake"] = {
         "Stone", "Sand Stone", "Copper", "Iron", "Tin", "Silver", "Gold",
@@ -90,12 +95,6 @@ local Config = {
     MiningPosition = CustomSettings.MiningPosition or "Under",
     ClickDelay = CustomSettings.ClickDelay or 0.25,
 
-    -- MOB COMBAT
-    MobDetectionRange = CustomSettings.MobScanRange or 30,
-    MobCombatMode = CustomSettings.CombatMode or "Kill", -- "Kill" or "Spam"
-    CombatUnderOffset = CustomSettings.CombatUnderOffset or 8,
-    CombatEnabled = CustomSettings.CombatEnabled or false,
-
     -- FILTER
     FilterEnabled = CustomSettings.FilterEnabled or false,
     FilterVolcanicOnly = CustomSettings.FilterVolcanicOnly or false,
@@ -108,7 +107,6 @@ local Config = {
     MainEnabled = false,
     EspEnabled = CustomSettings.EspEnabled or false,
     OnlyLava = CustomSettings.OnlyLava or false,
-    PriorityVolcanic = CustomSettings.PriorityVolcanic or false,
     TravelSpeed = CustomSettings.TravelSpeed or 300,
     InstantTP_Range = CustomSettings.InstantTP_Range or 60,
     AutoEquip = CustomSettings.AutoEquip or false,
@@ -131,6 +129,13 @@ local Config = {
         CustomSettings.EspColor and CustomSettings.EspColor.B or 100
     ),
     EspTextSize = CustomSettings.EspTextSize or 16,
+}
+
+-- NEW: Mob farm config
+local MobConfig = {
+    Enabled = false,
+    UnderOffset = 8,
+    AttackDistance = 8,
 }
 
 if CustomSettings.EnabledRocks then
@@ -156,6 +161,12 @@ local FallbackUI = {
     Dragging = false, DragOffset = {x = 0, y = 0},
 }
 
+-- NEW: Mob farm UI
+local MobUI = {
+    X = 100, Y = 450, Width = 260, BaseHeight = 160, Visible = false,
+    Dragging = false, DragOffset = {x = 0, y = 0},
+}
+
 -- COLORS (updated theme)
 local Colors = {
     Bg = Color3.fromRGB(10, 20, 45),              -- dark blue background
@@ -164,23 +175,18 @@ local Colors = {
     On = Color3.fromRGB(0, 128, 70),              -- emerald green
     Off = Color3.fromRGB(255, 140, 0),            -- orange
     Btn = Color3.fromRGB(40, 60, 100),            -- neutral button
-    Menu = Color3.fromRGB(140, 70, 200),          -- purple for Filter / Fallback
+    Menu = Color3.fromRGB(140, 70, 200),          -- purple (menus)
     Lava = Color3.fromRGB(255, 100, 0),
     Gold = Color3.fromRGB(255, 200, 0),
     Debug = Color3.fromRGB(255, 0, 255),
-    Combat = Color3.fromRGB(255, 100, 150)
 }
 
 local LocalPlayer = Players.LocalPlayer
 local CurrentTarget = nil
-local CurrentMobTarget = nil
-local SavedMiningTarget = nil
 local MouseState = { WasPressed = false }
 local EquipDebounce = 0
 local LastMineClick = 0
-local LastWeaponSwitch = 0
 local TargetLocked = false
-local InCombat = false
 local IsSelling = false
 
 -- ============================================================================
@@ -283,7 +289,7 @@ local function ClickObject(obj)
 end
 
 -- ============================================================================
--- 3. MOB DETECTION & COMBAT
+-- 3. MOB HELPERS (for Mob Farm)
 -- ============================================================================
 
 local function IsAlive(Model)
@@ -293,77 +299,65 @@ local function IsAlive(Model)
     return Humanoid and RootPart and Humanoid.Health > 0
 end
 
-local function FindNearestMob(MyPosition)
-    local LivingFolder = Workspace:FindFirstChild("Living")
-    if not LivingFolder then return nil end
+local function GetBaseName(Name)
+    local Base = string.match(Name, "^(.-)%d*$")
+    return (Base and Base ~= "") and Base or Name
+end
 
-    local Closest = nil
-    local MinDist = 999999
+local function RefreshMobList()
+    local Folder = Workspace:FindFirstChild("Living")
+    if not Folder then MobList = {} return end
 
-    for _, Mob in ipairs(LivingFolder:GetChildren()) do
-        if Players:FindFirstChild(Mob.Name) then
+    local Unique = {}
+    local NewList = {}
+
+    for _, Child in ipairs(Folder:GetChildren()) do
+        if Players:FindFirstChild(Child.Name) then
             continue
         end
-        if Mob.ClassName == "Model" and IsAlive(Mob) then
-            local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
-            if MobRoot then
-                local Dist = vector.magnitude(MobRoot.Position - MyPosition)
-                if Dist < MinDist and Dist <= Config.MobDetectionRange then
-                    MinDist = Dist
-                    Closest = Mob
+        if Child.ClassName == "Model" and Child:FindFirstChild("Humanoid") then
+            local BaseName = GetBaseName(Child.Name)
+            if not Unique[BaseName] then
+                Unique[BaseName] = true
+                table.insert(NewList, BaseName)
+                if EnabledMobs[BaseName] == nil then
+                    EnabledMobs[BaseName] = false
                 end
             end
         end
     end
 
-    return Closest
+    table.sort(NewList)
+    MobList = NewList
 end
 
-local function EquipTool(ToolName, SlotKeyCode)
-    local Char = LocalPlayer.Character
-    if not Char then return false end
+local function FindEnabledMobTarget(myPos)
+    local Folder = Workspace:FindFirstChild("Living")
+    if not Folder then return nil end
 
-    if Char:FindFirstChild(ToolName) then
-        return true
-    end
+    local closest
+    local bestDist = math.huge
 
-    local Backpack = LocalPlayer.Backpack
-    if Backpack and Backpack:FindFirstChild(ToolName) then
-        if keypress and SlotKeyCode then
-            keypress(SlotKeyCode)
-            keyrelease(SlotKeyCode)
-        else
-            if SlotKeyCode == 49 then
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-            elseif SlotKeyCode == 50 then
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game)
+    for _, Mob in ipairs(Folder:GetChildren()) do
+        if Players:FindFirstChild(Mob.Name) then
+            continue
+        end
+        if Mob.ClassName == "Model" and IsAlive(Mob) then
+            local baseName = GetBaseName(Mob.Name)
+            if EnabledMobs[baseName] then
+                local root = Mob:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local dist = vector.magnitude(root.Position - myPos)
+                    if dist < bestDist then
+                        bestDist = dist
+                        closest = Mob
+                    end
+                end
             end
         end
-        return true
-    end
-    return false
-end
-
-local function SpamWeaponSwitch()
-    if os.clock() - LastWeaponSwitch < 0.1 then return end
-
-    if keypress then
-        local slot = (os.clock() % 0.4 < 0.2) and 49 or 50 -- 1 / 2
-        keypress(slot)
-        keyrelease(slot)
-    else
-        if os.clock() % 0.4 < 0.2 then
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-        else
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game)
-        end
     end
 
-    LastWeaponSwitch = os.clock()
+    return closest
 end
 
 -- ============================================================================
@@ -466,16 +460,8 @@ local function GarbageCollect()
             TargetLocked = false
         end
     end
-    if SavedMiningTarget then
-        if not IsValid(SavedMiningTarget) or GetRockHealth(SavedMiningTarget) <= 0 then
-            SavedMiningTarget = nil
-        end
-    end
-    if CurrentMobTarget then
-        if not IsAlive(CurrentMobTarget) then
-            CurrentMobTarget = nil
-            InCombat = false
-        end
+    if MobCurrentTarget and not IsAlive(MobCurrentTarget) then
+        MobCurrentTarget = nil
     end
 end
 
@@ -504,6 +490,33 @@ local function CheckClick()
     end
 
     MouseState.WasPressed = IsPressed
+    return false
+end
+
+local function EquipTool(ToolName, SlotKeyCode)
+    local Char = LocalPlayer.Character
+    if not Char then return false end
+
+    if Char:FindFirstChild(ToolName) then
+        return true
+    end
+
+    local Backpack = LocalPlayer.Backpack
+    if Backpack and Backpack:FindFirstChild(ToolName) then
+        if keypress and SlotKeyCode then
+            keypress(SlotKeyCode)
+            keyrelease(SlotKeyCode)
+        else
+            if SlotKeyCode == 49 then
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+            elseif SlotKeyCode == 50 then
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game)
+            end
+        end
+        return true
+    end
     return false
 end
 
@@ -645,7 +658,7 @@ local function FindNearestRock()
 end
 
 -- ============================================================================
--- 6. AUTO SELL SYSTEM (your fixed logic, adapted)
+-- 6. AUTO SELL SYSTEM (fixed logic)
 -- ============================================================================
 
 local function PressE()
@@ -680,10 +693,8 @@ local function PerformAutoSell()
 
     IsSelling = true
     CurrentTarget = nil
-    CurrentMobTarget = nil
-    SavedMiningTarget = nil
+    MobCurrentTarget = nil
     TargetLocked = false
-    InCombat = false
 
     local StartTime = os.clock()
     local function CheckTimeout()
@@ -870,7 +881,7 @@ local function UpdateLoop()
 
     -- DRAGGING
     if IsLeftDown then
-        if not MainUI.Dragging and not FilterUI.Dragging and not FallbackUI.Dragging then
+        if not MainUI.Dragging and not FilterUI.Dragging and not FallbackUI.Dragging and not MobUI.Dragging then
             if MainUI.Visible and IsMouseInRect(MousePos, MainUI.X, MainUI.Y, MainUI.Width, 30) then
                 MainUI.Dragging = true
                 MainUI.DragOffset.x = MousePos.X - MainUI.X
@@ -883,6 +894,10 @@ local function UpdateLoop()
                 FallbackUI.Dragging = true
                 FallbackUI.DragOffset.x = MousePos.X - FallbackUI.X
                 FallbackUI.DragOffset.y = MousePos.Y - FallbackUI.Y
+            elseif MobUI.Visible and IsMouseInRect(MousePos, MobUI.X, MobUI.Y, MobUI.Width, 30) then
+                MobUI.Dragging = true
+                MobUI.DragOffset.x = MousePos.X - MobUI.X
+                MobUI.DragOffset.y = MousePos.Y - MobUI.Y
             end
         end
 
@@ -898,13 +913,18 @@ local function UpdateLoop()
             FallbackUI.X = MousePos.X - FallbackUI.DragOffset.x
             FallbackUI.Y = MousePos.Y - FallbackUI.DragOffset.y
         end
+        if MobUI.Dragging then
+            MobUI.X = MousePos.X - MobUI.DragOffset.x
+            MobUI.Y = MousePos.Y - MobUI.DragOffset.y
+        end
     else
         MainUI.Dragging = false
         FilterUI.Dragging = false
         FallbackUI.Dragging = false
+        MobUI.Dragging = false
     end
 
-    -- TOGGLE BUTTON (small button)
+    -- TOGGLE BUTTON (small button for main menu)
     DrawingImmediate.FilledRectangle(
         vector.create(MainUI.ToggleBtn.X, MainUI.ToggleBtn.Y, 0),
         vector.create(MainUI.ToggleBtn.W, MainUI.ToggleBtn.H, 0),
@@ -919,7 +939,7 @@ local function UpdateLoop()
         MainUI.Visible = not MainUI.Visible
     end
 
-    -- MAIN WINDOW
+    -- MAIN ORE WINDOW
     if MainUI.Visible then
         local ItemCount = math.max(1, #RockList)
         local TotalHeight = MainUI.BaseHeight + (ItemCount * 22) + 20
@@ -963,10 +983,7 @@ local function UpdateLoop()
             function()
                 Config.MainEnabled = not Config.MainEnabled
                 CurrentTarget = nil
-                CurrentMobTarget = nil
-                SavedMiningTarget = nil
                 TargetLocked = false
-                InCombat = false
             end
         )
 
@@ -981,30 +998,7 @@ local function UpdateLoop()
                 RockNamesSet = {}
                 RockList = {}
                 CurrentTarget = nil
-                CurrentMobTarget = nil
-                SavedMiningTarget = nil
                 TargetLocked = false
-                InCombat = false
-            end
-        )
-
-        -- COMBAT ENABLE TOGGLE
-        MainBtn(
-            Config.CombatEnabled and "Combat : ON" or "Combat : OFF",
-            Config.CombatEnabled and Colors.On or Colors.Off,
-            function()
-                Config.CombatEnabled = not Config.CombatEnabled
-                CurrentMobTarget = nil
-                InCombat = false
-            end
-        )
-
-        -- COMBAT MODE (Kill / Spam) – neutral button
-        MainBtn(
-            "Mode : " .. (Config.MobCombatMode == "Kill" and "Kill" or "Spam"),
-            Colors.Btn,
-            function()
-                Config.MobCombatMode = (Config.MobCombatMode == "Kill") and "Spam" or "Kill"
             end
         )
 
@@ -1061,6 +1055,15 @@ local function UpdateLoop()
             Colors.Menu,
             function()
                 FallbackUI.Visible = not FallbackUI.Visible
+            end
+        )
+
+        -- NEW: MOB FARM MENU BUTTON (purple)
+        MainBtn(
+            MobUI.Visible and "Close Mob Farm" or "Open Mob Farm",
+            Colors.Menu,
+            function()
+                MobUI.Visible = not MobUI.Visible
             end
         )
 
@@ -1268,7 +1271,95 @@ local function UpdateLoop()
         end
     end
 
-    -- ESP
+    -- NEW: MOB FARM WINDOW
+    if MobUI.Visible then
+        local ItemCount = math.max(1, #MobList)
+        local TotalHeight = MobUI.BaseHeight + (ItemCount * 22) + 40
+
+        DrawingImmediate.FilledRectangle(
+            vector.create(MobUI.X, MobUI.Y, 0),
+            vector.create(MobUI.Width, TotalHeight, 0),
+            Colors.Bg, 0.95
+        )
+        DrawingImmediate.FilledRectangle(
+            vector.create(MobUI.X, MobUI.Y, 0),
+            vector.create(MobUI.Width, 30, 0),
+            Colors.Header, 1
+        )
+        DrawingImmediate.OutlinedText(
+            vector.create(MobUI.X + 10, MobUI.Y + 8, 0),
+            16, Colors.Text, 1, "Mob Farm", false, nil
+        )
+
+        local FY = 35
+
+        -- Mob Farm master toggle
+        local MobTxt = MobConfig.Enabled and "Mob Farming: ON" or "Mob Farming: OFF"
+        local MobCol = MobConfig.Enabled and Colors.On or Colors.Off
+        DrawingImmediate.FilledRectangle(
+            vector.create(MobUI.X + 10, MobUI.Y + FY, 0),
+            vector.create(MobUI.Width - 20, 25, 0),
+            MobCol, 1
+        )
+        DrawingImmediate.Text(
+            vector.create(MobUI.X + 20, MobUI.Y + FY + 5, 0),
+            16, Colors.Text, 1, MobTxt, false, nil
+        )
+        if Clicked and IsMouseInRect(MousePos, MobUI.X + 10, MobUI.Y + FY, MobUI.Width - 20, 25) then
+            MobConfig.Enabled = not MobConfig.Enabled
+            MobCurrentTarget = nil
+        end
+        FY = FY + 35
+
+        -- Refresh mob list
+        DrawingImmediate.FilledRectangle(
+            vector.create(MobUI.X + 10, MobUI.Y + FY, 0),
+            vector.create(MobUI.Width - 20, 20, 0),
+            Colors.Btn, 1
+        )
+        DrawingImmediate.Text(
+            vector.create(MobUI.X + 20, MobUI.Y + FY + 2, 0),
+            14, Colors.Text, 1, "Refresh Mob List", false, nil
+        )
+        if Clicked and IsMouseInRect(MousePos, MobUI.X + 10, MobUI.Y + FY, MobUI.Width - 20, 20) then
+            RefreshMobList()
+        end
+        FY = FY + 25
+
+        DrawingImmediate.OutlinedText(
+            vector.create(MobUI.X + 10, MobUI.Y + FY, 0),
+            14, Colors.Text, 1, "Click mob to toggle:", false, nil
+        )
+        FY = FY + 20
+
+        if #MobList == 0 then
+            DrawingImmediate.OutlinedText(
+                vector.create(MobUI.X + 10, MobUI.Y + FY, 0),
+                14, Colors.Text, 1, "(No mobs detected yet)", false, nil
+            )
+        else
+            for _, MobName in ipairs(MobList) do
+                local isOn = EnabledMobs[MobName] == true
+                DrawingImmediate.FilledRectangle(
+                    vector.create(MobUI.X + 10, MobUI.Y + FY, 0),
+                    vector.create(MobUI.Width - 20, 20, 0),
+                    isOn and Colors.On or Colors.Off,
+                    1
+                )
+                DrawingImmediate.Text(
+                    vector.create(MobUI.X + 20, MobUI.Y + FY + 2, 0),
+                    14, Colors.Text, 1, MobName, false, nil
+                )
+                if Clicked and IsMouseInRect(MousePos, MobUI.X + 10, MobUI.Y + FY, MobUI.Width - 20, 20) then
+                    EnabledMobs[MobName] = not EnabledMobs[MobName]
+                    MobCurrentTarget = nil
+                end
+                FY = FY + 22
+            end
+        end
+    end
+
+    -- ESP (ore)
     if Config.EspEnabled then
         for _, OreObj in ipairs(ActiveOres) do
             if IsValid(OreObj) then
@@ -1294,7 +1385,7 @@ local function UpdateLoop()
         end
     end
 
-    -- Stash capacity
+    -- Stash capacity display
     local pName = LocalPlayer.Name
     local Path_Capacity = "game.Players." .. pName .. ".PlayerGui.Menu.Frame.Frame.Menus.Stash.Capacity.Text"
     local capObj = GetObject(Path_Capacity)
@@ -1317,18 +1408,11 @@ local function UpdateLoop()
         end
     end
 
-    -- Combat status
-    if InCombat and Config.CombatEnabled then
-        DrawingImmediate.OutlinedText(
-            vector.create(Camera.ViewportSize.X - 150, 40, 0),
-            18, Colors.Combat, 1, "COMBAT MODE", false, nil
-        )
-    end
-
     if IsSelling then return end
 
     local Char = LocalPlayer.Character
-    if Char then
+    if Char and not MobConfig.Enabled then
+        -- only auto-equip pickaxe when NOT doing mob farm
         CheckAutoEquip(Char)
     end
 
@@ -1338,73 +1422,51 @@ local function UpdateLoop()
 
     local MyRoot = Char.HumanoidRootPart
 
+    ------------------------------------------------------------------------
+    -- MOB FARM LOGIC (runs instead of ore farm when enabled)
+    ------------------------------------------------------------------------
+    if MobConfig.Enabled then
+        if not MobCurrentTarget or not IsAlive(MobCurrentTarget) then
+            MobCurrentTarget = FindEnabledMobTarget(MyRoot.Position)
+            if not MobCurrentTarget then
+                return
+            end
+        end
+
+        local MobRoot = MobCurrentTarget:FindFirstChild("HumanoidRootPart")
+        if not MobRoot then
+            MobCurrentTarget = nil
+            return
+        end
+
+        local MobPos = MobRoot.Position
+        local GoalPos = vector.create(MobPos.X, MobPos.Y - MobConfig.UnderOffset, MobPos.Z)
+        local Diff = MyRoot.Position - GoalPos
+        local Dist = vector.magnitude(Diff)
+
+        if Dist > MobConfig.AttackDistance then
+            SkyHopMove(MyRoot, GoalPos, DeltaTime)
+        else
+            EquipTool(Config.WeaponName, 50)
+            local LookAt = Vector3.new(MobPos.X, MobPos.Y, MobPos.Z)
+            local Pos = Vector3.new(GoalPos.X, GoalPos.Y, GoalPos.Z)
+            MyRoot.CFrame = CFrame.lookAt(Pos, LookAt)
+            MyRoot.Velocity = vector.zero
+            if mouse1click then
+                mouse1click()
+            end
+        end
+
+        return
+    end
+
+    ------------------------------------------------------------------------
+    -- ORE FARM LOGIC
+    ------------------------------------------------------------------------
     if not Config.MainEnabled then
         return
     end
 
-    -- COMBAT HANDLING
-    if Config.CombatEnabled then
-        local NearbyMob = FindNearestMob(MyRoot.Position)
-
-        if NearbyMob then
-            InCombat = true
-
-            if Config.MobCombatMode == "Kill" then
-                if CurrentTarget and not SavedMiningTarget then
-                    SavedMiningTarget = CurrentTarget
-                end
-
-                CurrentMobTarget = NearbyMob
-                CurrentTarget = nil
-                TargetLocked = false
-
-                local MobRoot = NearbyMob:FindFirstChild("HumanoidRootPart")
-                if MobRoot then
-                    local MobPos = MobRoot.Position
-                    local GoalPos = vector.create(MobPos.X, MobPos.Y - Config.CombatUnderOffset, MobPos.Z)
-                    local Diff = MyRoot.Position - GoalPos
-                    local Dist = vector.magnitude(Diff)
-
-                    if Dist > Config.MineDistance then
-                        SkyHopMove(MyRoot, GoalPos, DeltaTime)
-                    else
-                        EquipTool(Config.WeaponName, 50)
-                        local LookAt = Vector3.new(MobPos.X, MobPos.Y, MobPos.Z)
-                        local Pos = Vector3.new(GoalPos.X, GoalPos.Y, GoalPos.Z)
-                        MyRoot.CFrame = CFrame.lookAt(Pos, LookAt)
-                        MyRoot.Velocity = vector.zero
-                        if mouse1click then
-                            mouse1click()
-                        end
-                    end
-                end
-
-                return
-
-            else
-                -- Spam mode, keep mining but switch between tools
-                SpamWeaponSwitch()
-            end
-        else
-            if InCombat then
-                InCombat = false
-                CurrentMobTarget = nil
-
-                if SavedMiningTarget and IsValid(SavedMiningTarget) and GetRockHealth(SavedMiningTarget) > 0 then
-                    CurrentTarget = SavedMiningTarget
-                    TargetLocked = true
-                end
-
-                SavedMiningTarget = nil
-
-                if Config.AutoEquip then
-                    EquipTool(Config.ToolName, 49)
-                end
-            end
-        end
-    end
-
-    -- MINING LOGIC
     if CurrentTarget then
         if not IsValid(CurrentTarget) then
             CurrentTarget = nil
