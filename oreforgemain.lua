@@ -41,16 +41,22 @@ local OreDatabase = {
         "Blue Crystal", "Orange Crystal", "Green Crystal", "Purple Crystal",
         "Crimson Crystal", "Rainbow Crystal", "Arcane Crystal"
     },
-    -- NEW AREA: Frozen Expanse
+    -- FROZEN EXPANSE (using ore names, not rocks)
     ["Frozen Expanse"] = {
-        "Basalt Rock",
-        "Iceberg",
-        "Icy Boulder",
-        "Icy Pebble",
-        "Icy Rock",
-        "Large Ice Crystal",
-        "Medium Ice Crystal",
-        "Small Ice Crystal"
+        "Tungsten",
+        "Sulfur",
+        "Pumice",
+        "Graphite",
+        "Aetherit",
+        "Scheelite",
+        "Larimar",
+        "Neurotite",
+        "Frost Fossil",
+        "Tide Carve",
+        "Velchire",
+        "Sanctis",
+        "Snowite",
+        "Iceite"
     }
 }
 
@@ -121,13 +127,13 @@ if CustomSettings.MobScanRange or CustomSettings.CombatMode then
 end
 
 local MainUI = {
-    X = 100, Y = 100, Width = 250, BaseHeight = 380, Visible = true,
+    X = 100, Y = 100, Width = 310, BaseHeight = 380, Visible = true,
     Dragging = false, DragOffset = {x = 0, y = 0},
     ToggleBtn = { X = 0, Y = 500, W = 40, H = 40 }
 }
 
 local FilterUI = {
-    X = 400, Y = 100, Width = 250, BaseHeight = 262, Visible = false,
+    X = 400, Y = 100, Width = 310, BaseHeight = 262, Visible = false,
     Dragging = false, DragOffset = {x = 0, y = 0},
     CurrentCategory = "Stonewake" 
 }
@@ -143,7 +149,7 @@ local Colors = {
 local LocalPlayer = Players.LocalPlayer
 local CurrentTarget = nil
 local CurrentMobTarget = nil
-local SavedMiningTarget = nil  -- NEW: Save the rock we were mining before combat
+local SavedMiningTarget = nil  -- Save the rock we were mining before combat
 local MouseState = { WasPressed = false }
 local EquipDebounce = 0
 local LastMineClick = 0
@@ -657,7 +663,7 @@ local function PerformAutoSell()
         IsSelling = true
         CurrentTarget = nil 
         CurrentMobTarget = nil
-        SavedMiningTarget = nil  -- Clear saved target during selling
+        SavedMiningTarget = nil
         TargetLocked = false
         InCombat = false
         
@@ -965,7 +971,7 @@ local function UpdateLoop()
         if Clicked and IsMouseInRect(MousePos, FilterUI.X + 10, FilterUI.Y + FY, FilterUI.Width - 20, 25) then Config.FilterVolcanicOnly = not Config.FilterVolcanicOnly end
         FY = FY + 35
 
-        -- Categories (NOW WITH FROZEN EXPANSE)
+        -- Categories (with Frozen Expanse)
         local btnW = (FilterUI.Width - 30) / 4 
         local Cats = {"Stonewake", "Forgotten", "Goblin", "Frozen Expanse"}
         for i, Cat in Cats do
@@ -1032,15 +1038,13 @@ local function UpdateLoop()
             local capText = "Stash: " .. current .. "/" .. max
             local capColor = Colors.Text
             
-            -- Change color if getting full
             local percent = tonumber(current) / tonumber(max)
             if percent >= 0.9 then
-                capColor = Colors.Off -- Red
+                capColor = Colors.Off
             elseif percent >= 0.7 then
-                capColor = Colors.Gold -- Yellow/Orange
+                capColor = Colors.Gold
             end
             
-            -- Draw in top right corner
             DrawingImmediate.OutlinedText(vector.create(Camera.ViewportSize.X - 150, 10, 0), 18, capColor, 1, capText, false, nil)
         end
     end
@@ -1058,22 +1062,18 @@ local function UpdateLoop()
     if Char and Char:FindFirstChild("HumanoidRootPart") then
         local MyRoot = Char.HumanoidRootPart
         if Config.MainEnabled then
-            -- CHECK FOR NEARBY MOBS FIRST
             local NearbyMob = FindNearestMob(MyRoot.Position)
             
             if NearbyMob then
-                -- MOB DETECTED - Handle based on mode
                 InCombat = true
                 
                 if Config.MobCombatMode == "Kill" then
-                    -- KILL MODE: Teleport to mob and attack
-                    -- SAVE the current rock target before engaging mob (even if ore not revealed yet)
                     if CurrentTarget and not SavedMiningTarget then
                         SavedMiningTarget = CurrentTarget
                     end
                     
                     CurrentMobTarget = NearbyMob
-                    CurrentTarget = nil -- Stop mining temporarily
+                    CurrentTarget = nil
                     TargetLocked = false
                     
                     local MobRoot = NearbyMob:FindFirstChild("HumanoidRootPart")
@@ -1086,8 +1086,7 @@ local function UpdateLoop()
                         if Dist > Config.MineDistance then
                             SkyHopMove(MyRoot, GoalPos, DeltaTime)
                         else
-                            -- In range - attack
-                            EquipTool(Config.WeaponName, 50) -- Equip weapon (slot 2)
+                            EquipTool(Config.WeaponName, 50)
                             local LookAt = Vector3.new(MobPos.x, MobPos.y, MobPos.z)
                             local Pos = Vector3.new(GoalPos.x, GoalPos.y, GoalPos.z)
                             MyRoot.CFrame = CFrame.lookAt(Pos, LookAt)
@@ -1097,23 +1096,18 @@ local function UpdateLoop()
                     end
                     
                 elseif Config.MobCombatMode == "Spam" then
-                    -- SPAM MODE: Continue mining but spam weapon switch
                     SpamWeaponSwitch()
-                    -- Continue with normal mining logic below
                 end
             else
-                -- NO MOBS NEARBY - Mine normally
                 InCombat = false
                 CurrentMobTarget = nil
                 
-                -- RESTORE saved mining target if we just finished combat
                 if SavedMiningTarget and not CurrentTarget then
-                    -- Check if saved target is still valid and has health
                     if IsValid(SavedMiningTarget) and GetRockHealth(SavedMiningTarget) > 0 then
                         CurrentTarget = SavedMiningTarget
-                        TargetLocked = true -- Lock immediately since we were already mining this rock
+                        TargetLocked = true
                     end
-                    SavedMiningTarget = nil -- Clear saved target after restoring
+                    SavedMiningTarget = nil
                 end
                 
                 if CurrentTarget then
@@ -1128,8 +1122,6 @@ local function UpdateLoop()
                     local Y_Offset = (Config.MiningPosition == "Under") and -Config.UnderOffset or Config.AboveOffset
                     local GoalPos = vector.create(OrePos.x, OrePos.y + Y_Offset, OrePos.z)
                     
-                    -- SKIP the "already damaged by someone else" check if we just restored from SavedMiningTarget
-                    -- (The TargetLocked flag indicates this is our saved rock)
                     local DistToRock = vector.magnitude(MyRoot.Position - OrePos)
                     if DistToRock > 15 and MaxHP > 0 and HP < MaxHP and not TargetLocked then
                           CurrentTarget = nil; return
@@ -1140,17 +1132,14 @@ local function UpdateLoop()
                         if PriorityRock then CurrentTarget = PriorityRock; TargetLocked = false; return end
                     end
 
-                    -- IMPROVED FILTER LOGIC: Scan ALL ores in the rock
                     local HasWanted, AllOres = HasAnyWantedOre(CurrentTarget)
                     
                     if AllOres and #AllOres > 0 then
-                        -- Ores have been revealed - show debug info
                         if IsValid(CurrentTarget) then
-                            local OrePos = GetPosition(CurrentTarget)
-                            if OrePos then
-                                local ScreenPos, Visible = Camera:WorldToScreenPoint(OrePos)
+                            local OrePos2 = GetPosition(CurrentTarget)
+                            if OrePos2 then
+                                local ScreenPos, Visible = Camera:WorldToScreenPoint(OrePos2)
                                 if Visible then
-                                    -- Show all detected ores
                                     local OreListText = "Ores: "
                                     for i, ore in AllOres do
                                         OreListText = OreListText .. ore
@@ -1178,11 +1167,10 @@ local function UpdateLoop()
                             end
                             
                             if ApplyFilter then
-                                -- Show filter decision
                                 if IsValid(CurrentTarget) then
-                                    local OrePos = GetPosition(CurrentTarget)
-                                    if OrePos then
-                                        local ScreenPos, Visible = Camera:WorldToScreenPoint(OrePos)
+                                    local OrePos3 = GetPosition(CurrentTarget)
+                                    if OrePos3 then
+                                        local ScreenPos, Visible = Camera:WorldToScreenPoint(OrePos3)
                                         if Visible then
                                             local StatusColor = HasWanted and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
                                             local StatusText = HasWanted and "KEEPING" or "SKIPPING"
@@ -1200,7 +1188,6 @@ local function UpdateLoop()
                                 end
                                 
                                 if not HasWanted then
-                                    -- None of the revealed ores are wanted, abandon it
                                     CurrentTarget = nil
                                     TargetLocked = false
                                     return
@@ -1228,9 +1215,8 @@ local function UpdateLoop()
                             end
                         end
 
-                        -- Ensure pickaxe is equipped when mining
                         if Config.AutoEquip then
-                            EquipTool(Config.ToolName, 49) -- Equip pickaxe (slot 1)
+                            EquipTool(Config.ToolName, 49)
                         end
 
                         local LookAt = Vector3.new(OrePos.x, OrePos.y, OrePos.z)
@@ -1254,3 +1240,4 @@ end
 
 -- Use Severe's RunService.Render
 RunService.Render:Connect(UpdateLoop)
+
