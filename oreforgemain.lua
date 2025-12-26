@@ -795,7 +795,7 @@ local function RockPassesFilter(Rock)
     end
 
     if not ApplyFilter then
-        return true -- if volcanic-only is off for this rock, we let mining handle it
+        return true
     end
 
     if not IsOreWanted(RevealedOre) then
@@ -818,10 +818,10 @@ local function FindNearestRock()
         if Volcanic then return Volcanic end
     end
 
+    -- PRIMARY: enabled rocks that are not marked as fallback
     local ClosestPrimary = nil
     local MinPrimary = 999999
 
-    -- PRIMARY: enabled rocks that are NOT fallback
     for _, Rock in ipairs(ActiveRocks) do
         if IsValid(Rock) then
             local RName = SafeGetName(Rock)
@@ -847,14 +847,15 @@ local function FindNearestRock()
         return ClosestPrimary
     end
 
-    -- FALLBACK: enabled rocks that ARE marked fallback
+    -- FALLBACK: any rocks explicitly checked in the fallback menu,
+    -- regardless of whether they are enabled in the main list.
     local ClosestFallback = nil
     local MinFallback = 999999
 
     for _, Rock in ipairs(ActiveRocks) do
         if IsValid(Rock) then
             local RName = SafeGetName(Rock)
-            if RName and EnabledRocks[RName] and FallbackRocks[RName] then
+            if RName and FallbackRocks[RName] then
                 local HP = GetRockHealth(Rock)
                 local MaxHP = GetRockMaxHealth(Rock)
                 local IsFresh = (MaxHP > 0 and HP >= MaxHP) or (MaxHP == 0 and HP > 0)
@@ -1001,7 +1002,7 @@ local function UpdateLoop()
             InCombat = false
         end)
 
-        -- NEW: Fallback Menu button (replaces Volcanic Prio button)
+        -- Fallback Menu button
         local FallbackMenuTxt = FallbackUI.Visible and "Close Fallback Menu" or "Open Fallback Menu"
         MainBtn(FallbackMenuTxt, Colors.Gold, function()
             FallbackUI.Visible = not FallbackUI.Visible
@@ -1186,11 +1187,10 @@ local function UpdateLoop()
 
     -- FALLBACK WINDOW
     if FallbackUI.Visible then
+        -- now show ALL discovered rocks (RockList), not just ones enabled
         local FallbackNames = {}
         for _, Name in ipairs(RockList) do
-            if EnabledRocks[Name] then
-                table.insert(FallbackNames, Name)
-            end
+            table.insert(FallbackNames, Name)
         end
 
         local F_TotalHeight = FallbackUI.BaseHeight + (#FallbackNames * 22)
@@ -1516,3 +1516,4 @@ local function UpdateLoop()
 end
 
 RunService.Render:Connect(UpdateLoop)
+
