@@ -5,6 +5,7 @@
 -- // SERVICES //
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 local Camera = Workspace.CurrentCamera
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local MouseService = game:GetService("MouseService")
@@ -41,8 +42,7 @@ local OreDatabase = {
         "Blue Crystal", "Orange Crystal", "Green Crystal", "Purple Crystal",
         "Crimson Crystal", "Rainbow Crystal", "Arcane Crystal"
     },
-    -- FROZEN EXPANSE (using ore names, not rocks)
-    ["Frozen Expanse"] = {
+    ["Frozen"] = {
         "Tungsten",
         "Sulfur",
         "Pumice",
@@ -78,6 +78,7 @@ local Config = {
     MobDetectionRange = CustomSettings.MobScanRange or 30,
     MobCombatMode = CustomSettings.CombatMode or "Kill",
     CombatUnderOffset = CustomSettings.CombatUnderOffset or 8,
+    CombatEnabled = CustomSettings.CombatEnabled or false, -- master combat toggle
     
     -- FILTER
     FilterEnabled = CustomSettings.FilterEnabled or false,
@@ -103,6 +104,7 @@ local Config = {
         CustomSettings.MerchantPos and CustomSettings.MerchantPos.Y or 21.61,
         CustomSettings.MerchantPos and CustomSettings.MerchantPos.Z or -20.92
     ),
+    SellTimeout = CustomSettings.SellTimeout or 60,
     
     EspTextColor = Color3.fromRGB(
         CustomSettings.EspColor and CustomSettings.EspColor.R or 100,
@@ -356,7 +358,6 @@ local function GetRevealedOreType(Rock)
         end
     end
     
-    -- Return first ore found, or nil if none
     if #FoundOres > 0 then
         return FoundOres[1]
     end
@@ -369,13 +370,11 @@ local function GetAllRevealedOres(Rock)
     
     local AllOres = {}
     
-    -- Check main attribute
     local Attr = SafeGetAttribute(Rock, "Ore")
     if Attr and Attr ~= "" then
         table.insert(AllOres, tostring(Attr))
     end
     
-    -- Check ALL Ore children with safety
     local Success, Children = pcall(function() return Rock:GetChildren() end)
     if Success and Children then
         for _, Child in Children do
@@ -383,7 +382,6 @@ local function GetAllRevealedOres(Rock)
                 local ChildAttr = SafeGetAttribute(Child, "Ore")
                 if ChildAttr and ChildAttr ~= "" then
                     local OreStr = tostring(ChildAttr)
-                    -- Only add if not already in list
                     local AlreadyHave = false
                     for _, ExistingOre in AllOres do
                         if ExistingOre == OreStr then
@@ -406,27 +404,21 @@ local function IsOreWanted(CurrentOre)
     if not CurrentOre then return false end
     CurrentOre = tostring(CurrentOre)
     
-    -- Direct match (case-sensitive)
     if Config.FilterWhitelist[CurrentOre] then return true end
     
-    -- Try normalized versions
     local NoSpace = string.gsub(CurrentOre, " ", "")
     local Lower = string.lower(CurrentOre)
     local LowerNoSpace = string.lower(NoSpace)
     
     for whitelistedOre, enabled in pairs(Config.FilterWhitelist) do
         if enabled then
-            -- Try exact match
             if whitelistedOre == CurrentOre then return true end
             
-            -- Try case-insensitive match
             if string.lower(whitelistedOre) == Lower then return true end
             
-            -- Try without spaces (case-sensitive)
             local CleanWL = string.gsub(whitelistedOre, " ", "")
             if CleanWL == NoSpace then return true end
             
-            -- Try without spaces (case-insensitive)
             if string.lower(CleanWL) == LowerNoSpace then return true end
         end
     end
@@ -437,17 +429,16 @@ local function HasAnyWantedOre(Rock)
     local AllOres = GetAllRevealedOres(Rock)
     
     if #AllOres == 0 then
-        return false, nil  -- No ores revealed yet
+        return false, nil
     end
     
-    -- Check if ANY of the ores are wanted
     for _, OreName in AllOres do
         if IsOreWanted(OreName) then
-            return true, AllOres  -- Found a wanted ore!
+            return true, AllOres
         end
     end
     
-    return false, AllOres  -- Ores revealed but none are wanted
+    return false, AllOres
 end
 
 local function GarbageCollect()
@@ -617,7 +608,7 @@ local function SkyHopMove(RootPart, GoalPos, DeltaTime)
 end
 
 -- ============================================================================
--- 6. AUTO SELL SYSTEM
+-- 6. AUTO SELL SYSTEM (UPDATED)
 -- ============================================================================
 
 local function PressE()
@@ -632,28 +623,14 @@ local function PressE()
     end
 end
 
-local function PressKey(keyCode, holdTime)
-    holdTime = holdTime or 0.05
-    if keypress then
-        keypress(keyCode)
-        task.wait(holdTime)
-        keyrelease(keyCode)
-    else
-        -- Fallback to VirtualInputManager if keypress not available
-        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-        task.wait(holdTime)
-        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-    end
-    task.wait(0.1) -- Small delay between key presses
-end
-
 local function PerformAutoSell()
     if IsSelling then return end 
     if not Config.AutoSell then return end
     
-    local Path_Capacity = "game.Players.lugiabinh.PlayerGui.Menu.Frame.Frame.Menus.Stash.Capacity.Text"
-    local capObj = GetObject(Path_Capacity)
+    local pName = LocalPlayer.Name
+    local Path_Capacity = "game.Players."..pName..".PlayerGui.Menu.Frame.Frame.Menus.Stash.Capacity.Text"
     
+    local capObj = GetObject(Path_Capacity)
     if not capObj then return end 
     
     local text = GetTextMemory(capObj)
@@ -667,126 +644,87 @@ local function PerformAutoSell()
         TargetLocked = false
         InCombat = false
         
-        -- Travel to merchant
+        local StartTime = os.clock()
+        local function CheckTimeout()
+            if os.clock() - StartTime > Config.SellTimeout then
+                warn(">> AUTO SELL STUCK! Restarting process...")
+                IsSelling = false
+                return true
+            end
+            return false
+        end
+
         local Char = LocalPlayer.Character
         local Root = Char and Char:FindFirstChild("HumanoidRootPart")
         if Root then
             local arrived = false
             while not arrived and Config.AutoSell and Root.Parent do
+                if CheckTimeout() then return end
                 arrived = SkyHopMove(Root, Config.MerchantPos, 0.03)
                 task.wait(0.03)
             end
         end
         
-        -- Interact with merchant
-        local Path_Billboard = "game.Players.lugiabinh.PlayerGui.DialogueUI.ResponseBillboard"
+        local Path_Billboard = "game.Players."..pName..".PlayerGui.DialogueUI.ResponseBillboard"
         local bb = GetObject(Path_Billboard)
         local startInteract = os.clock()
         
         while (not bb or not bb.Visible) and (os.clock() - startInteract < 10) do
+            if CheckTimeout() then return end
             PressE()
             task.wait(0.5)
             bb = GetObject(Path_Billboard)
         end
-        
-        task.wait(1)
-        
-        -- Step 1: Activate UI navigation
-        if keypress then
-            keypress(220)
-            task.wait(0.15)
-            keyrelease(220)
-        end
-        task.wait(0.4)
-        
-        -- Navigate to "Yes" and press Enter
-        if keypress then
-            keypress(83)
-            task.wait(0.15)
-            keyrelease(83)
-        end
-        task.wait(0.25)
-        
-        if keypress then
-            keypress(87)
-            task.wait(0.15)
-            keyrelease(87)
-        end
-        task.wait(0.25)
-        
-        if keypress then
-            keypress(13)
-            task.wait(0.15)
-            keyrelease(13)
-        end
-        task.wait(1.5)
-        
-        -- Step 2: Select All
-        if keypress then
-            keypress(87)
-            task.wait(0.15)
-            keyrelease(87)
-        end
-        task.wait(0.25)
-        
-        if keypress then
-            keypress(87)
-            task.wait(0.15)
-            keyrelease(87)
-        end
-        task.wait(0.25)
-        
-        if keypress then
-            keypress(13)
-            task.wait(0.15)
-            keyrelease(13)
-        end
-        task.wait(0.7)
-        
-        -- Step 3: Accept
-        if keypress then
-            keypress(83)
-            task.wait(0.15)
-            keyrelease(83)
-        end
-        task.wait(0.25)
-        
-        if keypress then
-            keypress(13)
-            task.wait(0.15)
-            keyrelease(13)
-        end
-        task.wait(7)
-        
-        -- Step 4: Confirm deal
-        if keypress then
-            keypress(83)
-            task.wait(0.15)
-            keyrelease(83)
-        end
-        task.wait(0.25)
-        
-        if keypress then
-            keypress(87)
-            task.wait(0.15)
-            keyrelease(87)
-        end
-        task.wait(0.25)
-        
-        if keypress then
-            keypress(13)
-            task.wait(0.15)
-            keyrelease(13)
-        end
         task.wait(0.5)
         
-        -- Step 5: Turn off UI navigation
-        if keypress then
-            keypress(220)
-            task.wait(0.15)
-            keyrelease(220)
+        local Path_DialogueBtn   = "game.Players."..pName..".PlayerGui.DialogueUI.ResponseBillboard.Response.Button"
+        local Path_SellUI        = "game.Players."..pName..".PlayerGui.Sell.MiscSell"
+        local Path_SelectAll     = "game.Players."..pName..".PlayerGui.Sell.MiscSell.Frame.SelectAll"
+        local Path_SelectTitle   = "game.Players."..pName..".PlayerGui.Sell.MiscSell.Frame.SelectAll.Frame.Title"
+        local Path_Accept        = "game.Players."..pName..".PlayerGui.Sell.MiscSell.Frame.Accept"
+        
+        local timeout = 0
+        while timeout < 20 do
+            if CheckTimeout() then return end
+            local sellUI = GetObject(Path_SellUI)
+            if sellUI and sellUI.Visible then break end
+            local diagBtn = GetObject(Path_DialogueBtn)
+            if diagBtn then ClickObject(diagBtn) end
+            task.wait(0.5); timeout = timeout + 1
         end
-        task.wait(0.5)
+        
+        timeout = 0
+        while timeout < 20 do
+            if CheckTimeout() then return end
+            local titleObj = GetObject(Path_SelectTitle)
+            local selectBtn = GetObject(Path_SelectAll)
+            if titleObj then
+                local txt = GetTextMemory(titleObj)
+                if txt == "Unselect All" then break end
+                if selectBtn then ClickObject(selectBtn) end
+            end
+            task.wait(0.5); timeout = timeout + 1
+        end
+        
+        timeout = 0
+        while timeout < 20 do
+            if CheckTimeout() then return end
+            local bb2 = GetObject(Path_Billboard)
+            if bb2 and bb2.Visible then break end
+            local accBtn = GetObject(Path_Accept)
+            if accBtn then ClickObject(accBtn) end
+            task.wait(0.5); timeout = timeout + 1
+        end
+        
+        timeout = 0
+        while timeout < 20 do
+             if CheckTimeout() then return end
+             local bb3 = GetObject(Path_Billboard)
+             if not bb3 or not bb3.Visible then break end
+             local diagBtn = GetObject(Path_DialogueBtn)
+             if diagBtn then ClickObject(diagBtn) end
+             task.wait(0.5); timeout = timeout + 1
+        end
         
         IsSelling = false
     end
@@ -904,7 +842,7 @@ local function UpdateLoop()
         
         local LavaTxt = Config.OnlyLava and "ONLY LAVA: ON" or "ONLY LAVA: OFF"
         MainBtn(LavaTxt, Config.OnlyLava and Colors.On or Colors.Off, function() 
-            Config.OnlyLava = not Config.OnlyLava; ActiveRocks = {}; ActiveOres = {}; RockNamesSet = {}; RockList = {}; CurrentTarget = nil; CurrentMobTarget = nil; SavedMiningTarget = nil; TargetLocked = false; InCombat = false
+            Config.OnlyLava = not Config.OnlyLava; ActiveRocks = {}; ActiveOres = {}; RockNamesSet = {}; RockList = {}; CurrentTarget = nil; CurrentMobTarget = nil; SavedMiningTarget = nil; TargetLocked = false
         end)
 
         local PrioTxt = Config.PriorityVolcanic and "PRIO VOLCANIC: ON" or "PRIO VOLCANIC: OFF"
@@ -912,9 +850,20 @@ local function UpdateLoop()
             Config.PriorityVolcanic = not Config.PriorityVolcanic; CurrentTarget = nil; TargetLocked = false
         end)
 
-        -- Combat Mode Toggle
-        local CombatTxt = "COMBAT: " .. Config.MobCombatMode
-        MainBtn(CombatTxt, Colors.Combat, function()
+        -- Combat toggle
+        local CombatToggleTxt = "Combat: " .. (Config.CombatEnabled and "ON" or "OFF")
+        MainBtn(CombatToggleTxt, Config.CombatEnabled and Colors.On or Colors.Off, function()
+            Config.CombatEnabled = not Config.CombatEnabled
+            if not Config.CombatEnabled then
+                InCombat = false
+                CurrentMobTarget = nil
+                SavedMiningTarget = nil
+            end
+        end)
+
+        -- Combat mode under it
+        local ModeTxt = "Mode: " .. Config.MobCombatMode
+        MainBtn(ModeTxt, Colors.Combat, function()
             Config.MobCombatMode = (Config.MobCombatMode == "Kill") and "Spam" or "Kill"
         end)
 
@@ -955,7 +904,6 @@ local function UpdateLoop()
         DrawingImmediate.OutlinedText(vector.create(FilterUI.X + 10, FilterUI.Y + 8, 0), 16, Colors.Text, 1, "Ore Filter", false, nil)
         
         local FY = 35
-        -- Filter Enabled Toggle
         local F_Txt = Config.FilterEnabled and "FILTER: ACTIVE" or "FILTER: DISABLED"
         local F_Col = Config.FilterEnabled and Colors.On or Colors.Off
         DrawingImmediate.FilledRectangle(vector.create(FilterUI.X + 10, FilterUI.Y + FY, 0), vector.create(FilterUI.Width - 20, 25, 0), F_Col, 1)
@@ -963,7 +911,6 @@ local function UpdateLoop()
         if Clicked and IsMouseInRect(MousePos, FilterUI.X + 10, FilterUI.Y + FY, FilterUI.Width - 20, 25) then Config.FilterEnabled = not Config.FilterEnabled end
         FY = FY + 30
 
-        -- FILTER VOLCANIC ONLY
         local V_Txt = Config.FilterVolcanicOnly and "VOLCANIC ONLY: ON" or "VOLCANIC ONLY: OFF"
         local V_Col = Config.FilterVolcanicOnly and Colors.On or Colors.Off
         DrawingImmediate.FilledRectangle(vector.create(FilterUI.X + 10, FilterUI.Y + FY, 0), vector.create(FilterUI.Width - 20, 25, 0), V_Col, 1)
@@ -971,9 +918,9 @@ local function UpdateLoop()
         if Clicked and IsMouseInRect(MousePos, FilterUI.X + 10, FilterUI.Y + FY, FilterUI.Width - 20, 25) then Config.FilterVolcanicOnly = not Config.FilterVolcanicOnly end
         FY = FY + 35
 
-        -- Categories (with Frozen Expanse)
+        -- Categories (with Frozen)
         local btnW = (FilterUI.Width - 30) / 4 
-        local Cats = {"Stonewake", "Forgotten", "Goblin", "Frozen Expanse"}
+        local Cats = {"Stonewake", "Forgotten", "Goblin", "Frozen"}
         for i, Cat in Cats do
             local bx = FilterUI.X + 10 + ((i-1) * (btnW + 5))
             local isSel = FilterUI.CurrentCategory == Cat
@@ -986,7 +933,6 @@ local function UpdateLoop()
         DrawingImmediate.OutlinedText(vector.create(FilterUI.X + 10, FilterUI.Y + FY, 0), 14, Colors.Text, 1, "Keep these ores:", false, nil)
         FY = FY + 20
         
-        -- Debug button to print enabled filters
         DrawingImmediate.FilledRectangle(vector.create(FilterUI.X + 10, FilterUI.Y + FY, 0), vector.create(FilterUI.Width - 20, 20, 0), Color3.fromRGB(100, 100, 200), 1)
         DrawingImmediate.Text(vector.create(FilterUI.X + FilterUI.Width / 2, FilterUI.Y + FY + 2, 0), 12, Colors.Text, 1, "Print Enabled Filters to Console", true, nil)
         if Clicked and IsMouseInRect(MousePos, FilterUI.X + 10, FilterUI.Y + FY, FilterUI.Width - 20, 20) then
@@ -1028,8 +974,7 @@ local function UpdateLoop()
         end
     end
     
-    -- DRAW STASH CAPACITY in top right corner
-    local Path_Capacity = "game.Players.lugiabinh.PlayerGui.Menu.Frame.Frame.Menus.Stash.Capacity.Text"
+    local Path_Capacity = "game.Players."..LocalPlayer.Name..".PlayerGui.Menu.Frame.Frame.Menus.Stash.Capacity.Text"
     local capObj = GetObject(Path_Capacity)
     if capObj then
         local text = GetTextMemory(capObj)
@@ -1049,8 +994,7 @@ local function UpdateLoop()
         end
     end
     
-    -- Draw combat status
-    if InCombat then
+    if InCombat and Config.CombatEnabled then
         DrawingImmediate.OutlinedText(vector.create(Camera.ViewportSize.X - 150, 40, 0), 18, Colors.Combat, 1, "COMBAT MODE", false, nil)
     end
 
@@ -1062,9 +1006,12 @@ local function UpdateLoop()
     if Char and Char:FindFirstChild("HumanoidRootPart") then
         local MyRoot = Char.HumanoidRootPart
         if Config.MainEnabled then
-            local NearbyMob = FindNearestMob(MyRoot.Position)
+            local NearbyMob = nil
+            if Config.CombatEnabled then
+                NearbyMob = FindNearestMob(MyRoot.Position)
+            end
             
-            if NearbyMob then
+            if Config.CombatEnabled and NearbyMob then
                 InCombat = true
                 
                 if Config.MobCombatMode == "Kill" then
@@ -1238,6 +1185,16 @@ local function UpdateLoop()
     end
 end
 
--- Use Severe's RunService.Render
-RunService.Render:Connect(UpdateLoop)
-
+-- Use Severe's RunService.Render (fallbacks if needed)
+local Connected = false
+pcall(function() RunService.Render:Connect(UpdateLoop); Connected = true end)
+if not Connected then
+    pcall(function() RunService.RenderStepped:Connect(UpdateLoop); Connected = true end)
+end
+if not Connected then
+    pcall(function() RunService.Heartbeat:Connect(UpdateLoop); Connected = true end)
+end
+if not Connected then
+    warn("Using Manual Loop")
+    task.spawn(function() while true do UpdateLoop() task.wait(0.03) end end)
+end
