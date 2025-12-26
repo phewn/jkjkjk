@@ -1516,4 +1516,3 @@ local function UpdateLoop()
 end
 
 RunService.Render:Connect(UpdateLoop)
-
