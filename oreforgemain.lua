@@ -147,7 +147,8 @@ end
 local MainUI = {
     X = 100, Y = 100, Width = 310, BaseHeight = 380, Visible = true,
     Dragging = false, DragOffset = {x = 0, y = 0},
-    ToggleBtn = { X = 0, Y = 500, W = 40, H = 40 }
+    -- nicer button at top of screen
+    ToggleBtn = { X = 40, Y = 20, W = 130, H = 34 }
 }
 
 local FilterUI = {
@@ -717,7 +718,14 @@ local function PerformAutoSell()
         end
     end
 
-    local Path_Billboard = "game.Players." .. pName .. ".PlayerGui.DialogueUI.ResponseBillboard"
+    local pGui = "game.Players." .. pName .. ".PlayerGui."
+    local Path_Billboard   = pGui .. "DialogueUI.ResponseBillboard"
+    local Path_DialogueBtn = pGui .. "DialogueUI.ResponseBillboard.Response.Button"
+    local Path_SellUI      = pGui .. "Sell.MiscSell"
+    local Path_SelectAll   = pGui .. "Sell.MiscSell.Frame.SelectAll"
+    local Path_SelectTitle = pGui .. "Sell.MiscSell.Frame.SelectAll.Frame.Title"
+    local Path_Accept      = pGui .. "Sell.MiscSell.Frame.Accept"
+
     local bb = GetObject(Path_Billboard)
     local startInteract = os.clock()
 
@@ -728,12 +736,6 @@ local function PerformAutoSell()
         bb = GetObject(Path_Billboard)
     end
     task.wait(0.5)
-
-    local Path_DialogueBtn = "game.Players." .. pName .. ".PlayerGui.DialogueUI.ResponseBillboard.Response.Button"
-    local Path_SellUI = "game.Players." .. pName .. ".PlayerGui.Sell.MiscSell"
-    local Path_SelectAll = "game.Players." .. pName .. ".PlayerGui.Sell.MiscSell.Frame.SelectAll"
-    local Path_SelectTitle = "game.Players." .. pName .. ".PlayerGui.Sell.MiscSell.Frame.SelectAll.Frame.Title"
-    local Path_Accept = "game.Players." .. pName .. ".PlayerGui.Sell.MiscSell.Frame.Accept"
 
     -- Step 1: open sell UI
     local timeout = 0
@@ -872,7 +874,7 @@ local function UpdateLoop()
     GarbageCollect()
 
     local DeltaTime = 0.03
-    local MousePos = MouseService and MouseService:GetMouseLocation() or Vector2.new(0, 0)
+    local MousePos = getmouseposition()
     local Clicked = CheckClick()
     local IsLeftDown = false
     if isleftpressed then
@@ -924,39 +926,93 @@ local function UpdateLoop()
         MobUI.Dragging = false
     end
 
-    -- TOGGLE BUTTON (small button for main menu)
+    ------------------------------------------------------------------------
+    -- TOP TOGGLE BUTTON (prettier "pill" with border)
+    ------------------------------------------------------------------------
+    local tX, tY = MainUI.ToggleBtn.X, MainUI.ToggleBtn.Y
+    local tW, tH = MainUI.ToggleBtn.W, MainUI.ToggleBtn.H
+
+    -- outer frame
     DrawingImmediate.FilledRectangle(
-        vector.create(MainUI.ToggleBtn.X, MainUI.ToggleBtn.Y, 0),
-        vector.create(MainUI.ToggleBtn.W, MainUI.ToggleBtn.H, 0),
-        MainUI.Visible and Colors.On or Colors.Off,
+        vector.create(tX - 2, tY - 2, 0),
+        vector.create(tW + 4, tH + 4, 0),
+        Colors.Header,
+        0.95
+    )
+
+    -- inner button
+    local innerColor = MainUI.Visible and Colors.On or Colors.Off
+    DrawingImmediate.FilledRectangle(
+        vector.create(tX, tY, 0),
+        vector.create(tW, tH, 0),
+        innerColor,
         1
     )
+
+    -- label
     DrawingImmediate.Text(
-        vector.create(MainUI.ToggleBtn.X + 20, MainUI.ToggleBtn.Y + 12, 0),
-        14, Color3.new(0, 0, 0), 1, "Ore", true, nil
+        vector.create(tX + tW/2, tY + (tH/2) - 2, 0),
+        16,
+        Colors.Text,
+        1,
+        "Ore GUI",
+        true,
+        nil
     )
-    if Clicked and IsMouseInRect(MousePos, MainUI.ToggleBtn.X, MainUI.ToggleBtn.Y, MainUI.ToggleBtn.W, MainUI.ToggleBtn.H) then
+
+    -- little dot indicator on left
+    DrawingImmediate.Text(
+        vector.create(tX + 10, tY + (tH/2) - 2, 0),
+        14,
+        Color3.new(0,0,0),
+        1,
+        MainUI.Visible and "●" or "○",
+        true,
+        nil
+    )
+
+    if Clicked and IsMouseInRect(MousePos, tX, tY, tW, tH) then
         MainUI.Visible = not MainUI.Visible
     end
 
+    ------------------------------------------------------------------------
     -- MAIN ORE WINDOW
+    ------------------------------------------------------------------------
     if MainUI.Visible then
         local ItemCount = math.max(1, #RockList)
         local TotalHeight = MainUI.BaseHeight + (ItemCount * 22) + 20
 
+        -- frame/border
+        DrawingImmediate.FilledRectangle(
+            vector.create(MainUI.X - 2, MainUI.Y - 2, 0),
+            vector.create(MainUI.Width + 4, TotalHeight + 4, 0),
+            Colors.Header,
+            1
+        )
+
+        -- background
         DrawingImmediate.FilledRectangle(
             vector.create(MainUI.X, MainUI.Y, 0),
             vector.create(MainUI.Width, TotalHeight, 0),
-            Colors.Bg, 0.95
+            Colors.Bg,
+            0.95
         )
+
+        -- header bar
         DrawingImmediate.FilledRectangle(
             vector.create(MainUI.X, MainUI.Y, 0),
             vector.create(MainUI.Width, 30, 0),
-            Colors.Header, 1
+            Colors.Header,
+            1
         )
         DrawingImmediate.OutlinedText(
             vector.create(MainUI.X + 10, MainUI.Y + 8, 0),
-            16, Colors.Text, 1, "Ore Farm", false, nil
+            16,
+            Colors.Text,
+            1,
+            "Ore Farm",
+            false,
+            nil
         )
 
         local Y = 35
@@ -964,11 +1020,17 @@ local function UpdateLoop()
             DrawingImmediate.FilledRectangle(
                 vector.create(MainUI.X + 10, MainUI.Y + Y, 0),
                 vector.create(MainUI.Width - 20, 25, 0),
-                col, 1
+                col,
+                1
             )
             DrawingImmediate.Text(
                 vector.create(MainUI.X + 20, MainUI.Y + Y + 5, 0),
-                16, Colors.Text, 1, txt, false, nil
+                16,
+                Colors.Text,
+                1,
+                txt,
+                false,
+                nil
             )
             if Clicked and IsMouseInRect(MousePos, MainUI.X + 10, MainUI.Y + Y, MainUI.Width - 20, 25) then
                 callback()
@@ -1058,7 +1120,7 @@ local function UpdateLoop()
             end
         )
 
-        -- NEW: MOB FARM MENU BUTTON (purple)
+        -- MOB FARM MENU BUTTON (purple)
         MainBtn(
             MobUI.Visible and "Close Mob Farm" or "Open Mob Farm",
             Colors.Menu,
@@ -1070,7 +1132,12 @@ local function UpdateLoop()
         Y = Y + 10
         DrawingImmediate.OutlinedText(
             vector.create(MainUI.X + 10, MainUI.Y + Y, 0),
-            14, Colors.Text, 1, "Select Rocks to Farm:", false, nil
+            14,
+            Colors.Text,
+            1,
+            "Select Rocks to Farm:",
+            false,
+            nil
         )
         Y = Y + 20
 
@@ -1084,7 +1151,12 @@ local function UpdateLoop()
             )
             DrawingImmediate.Text(
                 vector.create(MainUI.X + 20, MainUI.Y + Y + 2, 0),
-                14, Colors.Text, 1, Name, false, nil
+                14,
+                Colors.Text,
+                1,
+                Name,
+                false,
+                nil
             )
             if Clicked and IsMouseInRect(MousePos, MainUI.X + 10, MainUI.Y + Y, MainUI.Width - 20, 20) then
                 EnabledRocks[Name] = not EnabledRocks[Name]
@@ -1095,24 +1167,41 @@ local function UpdateLoop()
         end
     end
 
+    ------------------------------------------------------------------------
     -- FILTER WINDOW
+    ------------------------------------------------------------------------
     if FilterUI.Visible then
         local CatList = OreDatabase[FilterUI.CurrentCategory] or {}
         local F_TotalHeight = FilterUI.BaseHeight + (#CatList * 22)
 
+        -- border
+        DrawingImmediate.FilledRectangle(
+            vector.create(FilterUI.X - 2, FilterUI.Y - 2, 0),
+            vector.create(FilterUI.Width + 4, F_TotalHeight + 4, 0),
+            Colors.Header,
+            1
+        )
+
         DrawingImmediate.FilledRectangle(
             vector.create(FilterUI.X, FilterUI.Y, 0),
             vector.create(FilterUI.Width, F_TotalHeight, 0),
-            Colors.Bg, 0.95
+            Colors.Bg,
+            0.95
         )
         DrawingImmediate.FilledRectangle(
             vector.create(FilterUI.X, FilterUI.Y, 0),
             vector.create(FilterUI.Width, 30, 0),
-            Colors.Header, 1
+            Colors.Header,
+            1
         )
         DrawingImmediate.OutlinedText(
             vector.create(FilterUI.X + 10, FilterUI.Y + 8, 0),
-            16, Colors.Text, 1, "Ore Filter", false, nil
+            16,
+            Colors.Text,
+            1,
+            "Ore Filter",
+            false,
+            nil
         )
 
         local FY = 35
@@ -1123,11 +1212,17 @@ local function UpdateLoop()
         DrawingImmediate.FilledRectangle(
             vector.create(FilterUI.X + 10, FilterUI.Y + FY, 0),
             vector.create(FilterUI.Width - 20, 25, 0),
-            F_Col, 1
+            F_Col,
+            1
         )
         DrawingImmediate.Text(
             vector.create(FilterUI.X + 60, FilterUI.Y + FY + 5, 0),
-            16, Colors.Text, 1, F_Txt, false, nil
+            16,
+            Colors.Text,
+            1,
+            F_Txt,
+            false,
+            nil
         )
         if Clicked and IsMouseInRect(MousePos, FilterUI.X + 10, FilterUI.Y + FY, FilterUI.Width - 20, 25) then
             Config.FilterEnabled = not Config.FilterEnabled
@@ -1142,11 +1237,17 @@ local function UpdateLoop()
         DrawingImmediate.FilledRectangle(
             vector.create(FilterUI.X + 10, FilterUI.Y + FY, 0),
             vector.create(FilterUI.Width - 20, 25, 0),
-            V_Col, 1
+            V_Col,
+            1
         )
         DrawingImmediate.Text(
             vector.create(FilterUI.X + 60, FilterUI.Y + FY + 5, 0),
-            16, Colors.Text, 1, V_Txt, false, nil
+            16,
+            Colors.Text,
+            1,
+            V_Txt,
+            false,
+            nil
         )
         if Clicked and IsMouseInRect(MousePos, FilterUI.X + 10, FilterUI.Y + FY, FilterUI.Width - 20, 25) then
             Config.FilterVolcanicOnly = not Config.FilterVolcanicOnly
@@ -1169,7 +1270,12 @@ local function UpdateLoop()
             )
             DrawingImmediate.Text(
                 vector.create(bx + 5, FilterUI.Y + FY + 5, 0),
-                14, Colors.Text, 1, Cat, false, nil
+                14,
+                Colors.Text,
+                1,
+                Cat,
+                false,
+                nil
             )
             if Clicked and IsMouseInRect(MousePos, bx, FilterUI.Y + FY, btnW, 25) then
                 FilterUI.CurrentCategory = Cat
@@ -1177,9 +1283,14 @@ local function UpdateLoop()
         end
         FY = FY + 35
 
-        DrawingImmediate.OutlinedText(
+        DrawingImmediate.outlinedText(
             vector.create(FilterUI.X + 10, FilterUI.Y + FY, 0),
-            14, Colors.Text, 1, "Keep these ores:", false, nil
+            14,
+            Colors.Text,
+            1,
+            "Keep these ores:",
+            false,
+            nil
         )
         FY = FY + 20
 
@@ -1193,7 +1304,12 @@ local function UpdateLoop()
             )
             DrawingImmediate.Text(
                 vector.create(FilterUI.X + 20, FilterUI.Y + FY + 2, 0),
-                14, Colors.Text, 1, OreName, false, nil
+                14,
+                Colors.Text,
+                1,
+                OreName,
+                false,
+                nil
             )
             if Clicked and IsMouseInRect(MousePos, FilterUI.X + 10, FilterUI.Y + FY, FilterUI.Width - 20, 20) then
                 Config.FilterWhitelist[OreName] = not Config.FilterWhitelist[OreName]
@@ -1204,24 +1320,41 @@ local function UpdateLoop()
         end
     end
 
+    ------------------------------------------------------------------------
     -- FALLBACK WINDOW (uses same RockList as main bottom)
+    ------------------------------------------------------------------------
     if FallbackUI.Visible then
         local FallbackNames = RockList
         local F_TotalHeight = FallbackUI.BaseHeight + (#FallbackNames * 22)
 
+        -- frame
+        DrawingImmediate.FilledRectangle(
+            vector.create(FallbackUI.X - 2, FallbackUI.Y - 2, 0),
+            vector.create(FallbackUI.Width + 4, F_TotalHeight + 4, 0),
+            Colors.Header,
+            1
+        )
+
         DrawingImmediate.FilledRectangle(
             vector.create(FallbackUI.X, FallbackUI.Y, 0),
             vector.create(FallbackUI.Width, F_TotalHeight, 0),
-            Colors.Bg, 0.95
+            Colors.Bg,
+            0.95
         )
         DrawingImmediate.FilledRectangle(
             vector.create(FallbackUI.X, FallbackUI.Y, 0),
             vector.create(FallbackUI.Width, 30, 0),
-            Colors.Header, 1
+            Colors.Header,
+            1
         )
         DrawingImmediate.OutlinedText(
             vector.create(FallbackUI.X + 10, FallbackUI.Y + 8, 0),
-            16, Colors.Text, 1, "Fallback Rocks", false, nil
+            16,
+            Colors.Text,
+            1,
+            "Fallback Rocks",
+            false,
+            nil
         )
 
         local FY = 35
@@ -1231,11 +1364,17 @@ local function UpdateLoop()
         DrawingImmediate.FilledRectangle(
             vector.create(FallbackUI.X + 10, FallbackUI.Y + FY, 0),
             vector.create(FallbackUI.Width - 20, 25, 0),
-            FB_Col, 1
+            FB_Col,
+            1
         )
         DrawingImmediate.Text(
             vector.create(FallbackUI.X + 20, FallbackUI.Y + FY + 5, 0),
-            16, Colors.Text, 1, FB_Txt, false, nil
+            16,
+            Colors.Text,
+            1,
+            FB_Txt,
+            false,
+            nil
         )
         if Clicked and IsMouseInRect(MousePos, FallbackUI.X + 10, FallbackUI.Y + FY, FallbackUI.Width - 20, 25) then
             Config.FallbackEnabled = not Config.FallbackEnabled
@@ -1246,7 +1385,12 @@ local function UpdateLoop()
 
         DrawingImmediate.OutlinedText(
             vector.create(FallbackUI.X + 10, FallbackUI.Y + FY, 0),
-            14, Colors.Text, 1, "Use these when main rocks are gone:", false, nil
+            14,
+            Colors.Text,
+            1,
+            "Use these when main rocks are gone:",
+            false,
+            nil
         )
         FY = FY + 20
 
@@ -1260,7 +1404,12 @@ local function UpdateLoop()
             )
             DrawingImmediate.Text(
                 vector.create(FallbackUI.X + 20, FallbackUI.Y + FY + 2, 0),
-                14, Colors.Text, 1, Name, false, nil
+                14,
+                Colors.Text,
+                1,
+                Name,
+                false,
+                nil
             )
             if Clicked and IsMouseInRect(MousePos, FallbackUI.X + 10, FallbackUI.Y + FY, FallbackUI.Width - 20, 20) then
                 FallbackRocks[Name] = not FallbackRocks[Name]
@@ -1271,24 +1420,41 @@ local function UpdateLoop()
         end
     end
 
-    -- NEW: MOB FARM WINDOW
+    ------------------------------------------------------------------------
+    -- MOB FARM WINDOW
+    ------------------------------------------------------------------------
     if MobUI.Visible then
         local ItemCount = math.max(1, #MobList)
         local TotalHeight = MobUI.BaseHeight + (ItemCount * 22) + 40
 
+        -- frame
+        DrawingImmediate.FilledRectangle(
+            vector.create(MobUI.X - 2, MobUI.Y - 2, 0),
+            vector.create(MobUI.Width + 4, TotalHeight + 4, 0),
+            Colors.Header,
+            1
+        )
+
         DrawingImmediate.FilledRectangle(
             vector.create(MobUI.X, MobUI.Y, 0),
             vector.create(MobUI.Width, TotalHeight, 0),
-            Colors.Bg, 0.95
+            Colors.Bg,
+            0.95
         )
         DrawingImmediate.FilledRectangle(
             vector.create(MobUI.X, MobUI.Y, 0),
             vector.create(MobUI.Width, 30, 0),
-            Colors.Header, 1
+            Colors.Header,
+            1
         )
         DrawingImmediate.OutlinedText(
             vector.create(MobUI.X + 10, MobUI.Y + 8, 0),
-            16, Colors.Text, 1, "Mob Farm", false, nil
+            16,
+            Colors.Text,
+            1,
+            "Mob Farm",
+            false,
+            nil
         )
 
         local FY = 35
@@ -1299,11 +1465,17 @@ local function UpdateLoop()
         DrawingImmediate.FilledRectangle(
             vector.create(MobUI.X + 10, MobUI.Y + FY, 0),
             vector.create(MobUI.Width - 20, 25, 0),
-            MobCol, 1
+            MobCol,
+            1
         )
         DrawingImmediate.Text(
             vector.create(MobUI.X + 20, MobUI.Y + FY + 5, 0),
-            16, Colors.Text, 1, MobTxt, false, nil
+            16,
+            Colors.Text,
+            1,
+            MobTxt,
+            false,
+            nil
         )
         if Clicked and IsMouseInRect(MousePos, MobUI.X + 10, MobUI.Y + FY, MobUI.Width - 20, 25) then
             MobConfig.Enabled = not MobConfig.Enabled
@@ -1315,11 +1487,17 @@ local function UpdateLoop()
         DrawingImmediate.FilledRectangle(
             vector.create(MobUI.X + 10, MobUI.Y + FY, 0),
             vector.create(MobUI.Width - 20, 20, 0),
-            Colors.Btn, 1
+            Colors.Btn,
+            1
         )
         DrawingImmediate.Text(
             vector.create(MobUI.X + 20, MobUI.Y + FY + 2, 0),
-            14, Colors.Text, 1, "Refresh Mob List", false, nil
+            14,
+            Colors.Text,
+            1,
+            "Refresh Mob List",
+            false,
+            nil
         )
         if Clicked and IsMouseInRect(MousePos, MobUI.X + 10, MobUI.Y + FY, MobUI.Width - 20, 20) then
             RefreshMobList()
@@ -1328,14 +1506,24 @@ local function UpdateLoop()
 
         DrawingImmediate.OutlinedText(
             vector.create(MobUI.X + 10, MobUI.Y + FY, 0),
-            14, Colors.Text, 1, "Click mob to toggle:", false, nil
+            14,
+            Colors.Text,
+            1,
+            "Click mob to toggle:",
+            false,
+            nil
         )
         FY = FY + 20
 
         if #MobList == 0 then
             DrawingImmediate.OutlinedText(
                 vector.create(MobUI.X + 10, MobUI.Y + FY, 0),
-                14, Colors.Text, 1, "(No mobs detected yet)", false, nil
+                14,
+                Colors.Text,
+                1,
+                "(No mobs detected yet)",
+                false,
+                nil
             )
         else
             for _, MobName in ipairs(MobList) do
@@ -1348,7 +1536,12 @@ local function UpdateLoop()
                 )
                 DrawingImmediate.Text(
                     vector.create(MobUI.X + 20, MobUI.Y + FY + 2, 0),
-                    14, Colors.Text, 1, MobName, false, nil
+                    14,
+                    Colors.Text,
+                    1,
+                    MobName,
+                    false,
+                    nil
                 )
                 if Clicked and IsMouseInRect(MousePos, MobUI.X + 10, MobUI.Y + FY, MobUI.Width - 20, 20) then
                     EnabledMobs[MobName] = not EnabledMobs[MobName]
@@ -1359,7 +1552,9 @@ local function UpdateLoop()
         end
     end
 
+    ------------------------------------------------------------------------
     -- ESP (ore)
+    ------------------------------------------------------------------------
     if Config.EspEnabled then
         for _, OreObj in ipairs(ActiveOres) do
             if IsValid(OreObj) then
@@ -1385,7 +1580,9 @@ local function UpdateLoop()
         end
     end
 
-    -- Stash capacity display
+    ------------------------------------------------------------------------
+    -- STASH CAPACITY HUD
+    ------------------------------------------------------------------------
     local pName = LocalPlayer.Name
     local Path_Capacity = "game.Players." .. pName .. ".PlayerGui.Menu.Frame.Frame.Menus.Stash.Capacity.Text"
     local capObj = GetObject(Path_Capacity)
@@ -1403,7 +1600,12 @@ local function UpdateLoop()
             end
             DrawingImmediate.OutlinedText(
                 vector.create(Camera.ViewportSize.X - 150, 10, 0),
-                18, capColor, 1, capText, false, nil
+                18,
+                capColor,
+                1,
+                capText,
+                false,
+                nil
             )
         end
     end
