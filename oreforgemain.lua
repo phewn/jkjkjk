@@ -569,6 +569,7 @@ local function SkyHopMove(RootPart, GoalPos, DeltaTime)
     return false
 end
 
+-- *** UPDATED FUNCTION: allow rocks with UNKNOWN ore to be mined to reveal ore ***
 local function FindNearestRock()
     local Char = LocalPlayer.Character
     if not Char then return nil end
@@ -608,15 +609,22 @@ local function FindNearestRock()
 
         local useRock = true
         if Config.FilterEnabled then
-            local HasWanted, _ = HasAnyWantedOre(Rock)
+            local HasWanted, AllOres = HasAnyWantedOre(Rock)
             local ApplyFilter = true
 
             if Config.FilterVolcanicOnly and not IsVolcanic(Rock) then
                 ApplyFilter = false
             end
 
-            if ApplyFilter and not HasWanted then
-                useRock = false
+            if ApplyFilter then
+                -- IMPORTANT PART:
+                -- If ore is UNKNOWN yet (AllOres is nil or empty), ALLOW it so we can start mining and reveal it.
+                if AllOres and #AllOres > 0 then
+                    -- Only skip if we *know* the ore AND it's not whitelisted
+                    if not HasWanted then
+                        useRock = false
+                    end
+                end
             end
         end
 
@@ -717,7 +725,8 @@ local function PerformAutoSell()
         end
     end
 
-    local Path_Billboard = "game.Players." .. pName .. ".PlayerGui.DialogueUI.ResponseBillboard"
+    local pName2 = LocalPlayer.Name
+    local Path_Billboard = "game.Players." .. pName2 .. ".PlayerGui.DialogueUI.ResponseBillboard"
     local bb = GetObject(Path_Billboard)
     local startInteract = os.clock()
 
@@ -729,11 +738,11 @@ local function PerformAutoSell()
     end
     task.wait(0.5)
 
-    local Path_DialogueBtn = "game.Players." .. pName .. ".PlayerGui.DialogueUI.ResponseBillboard.Response.Button"
-    local Path_SellUI = "game.Players." .. pName .. ".PlayerGui.Sell.MiscSell"
-    local Path_SelectAll = "game.Players." .. pName .. ".PlayerGui.Sell.MiscSell.Frame.SelectAll"
-    local Path_SelectTitle = "game.Players." .. pName .. ".PlayerGui.Sell.MiscSell.Frame.SelectAll.Frame.Title"
-    local Path_Accept = "game.Players." .. pName .. ".PlayerGui.Sell.MiscSell.Frame.Accept"
+    local Path_DialogueBtn = "game.Players." .. pName2 .. ".PlayerGui.DialogueUI.ResponseBillboard.Response.Button"
+    local Path_SellUI = "game.Players." .. pName2 .. ".PlayerGui.Sell.MiscSell"
+    local Path_SelectAll = "game.Players." .. pName2 .. ".PlayerGui.Sell.MiscSell.Frame.SelectAll"
+    local Path_SelectTitle = "game.Players." .. pName2 .. ".PlayerGui.Sell.MiscSell.Frame.SelectAll.Frame.Title"
+    local Path_Accept = "game.Players." .. pName2 .. ".PlayerGui.Sell.MiscSell.Frame.Accept"
 
     -- Step 1: open sell UI
     local timeout = 0
