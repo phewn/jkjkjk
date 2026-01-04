@@ -84,37 +84,48 @@ local OreDatabase = {
         "Arcane Crystal"
     },
     ["Frozen"] = {
-        -- original Frozen ores
-        "Tungsten",
-        "Sulfur",
-        "Pumice",
-        "Graphite",
-        "Aetherit",
-        "Scheelite",
-        "Larimar",
-        "Neurotite",
-        "Frost Fossil",
-        "Tide Carve",
-        "Velchire",
-        "Sanctis",
-        "Snowite",
-        "Iceite",
-        -- new Frozen ores
-        "Mistvein",
-        "Lgarite",
-        "Voidfractal",
-        "Moltenfrost",
-        "Crimsonite",
-        "Malachite",
-        "Aqujade",
-        "Cryptex",
-        "Galestor",
-        "Voidstar",
-        "Etherealite",
-        "Suryafal",
-        "Heavenite",
-        "Gargantuan"
-    }
+    -- original Frozen ores
+    "Tungsten",
+    "Sulfur",
+    "Pumice",
+    "Graphite",
+    "Aetherit",
+    "Scheelite",
+    "Larimar",
+    "Neurotite",
+    "Frost Fossil",
+    "Tide Carve",
+    "Velchire",
+    "Sanctis",
+    "Snowite",
+    "Iceite",
+
+    -- extended Frozen ores
+    "Mistvein",
+    "Lgarite",
+    "Voidfractal",
+    "Moltenfrost",
+    "Crimsonite",
+    "Malachite",
+    "Aqujade",
+    "Cryptex",
+    "Galestor",
+    "Voidstar",
+    "Etherealite",
+    "Suryafal",
+    "Heavenite",
+    "Gargantuan",
+
+    -- NEW ores you requested
+    "Heart Of The Island",
+    "Stolen Heart",
+    "Evil Eye",
+    "Duranite",
+    "Gulabite",
+    "Moon Stone",
+    "Frogite",
+    "Coinite"
+}
 }
 
 local Config = {
